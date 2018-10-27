@@ -1,5 +1,4 @@
 library(tidyverse)
-library(mvnfast)
 library(broom)
 
 # Technically as implemented here, the IVW- and Egger-MR approaches incorporate a multiplicative
