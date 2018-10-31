@@ -1,18 +1,72 @@
+library(rstanarm)
 library(tidyverse)
 library(broom)
 
-# Technically as implemented here, the IVW- and Egger-MR approaches incorporate a multiplicative
-# random effect, since the lm function will automatically estimate the variance of the error
-# rather than keep it fixed to 1. For formal estimation in real data, this should be considered but for the
-# purposes of this simulation study/note it's fiiiiiiiiine.
+options(mc.cores = parallel::detectCores())
+
+#' Bayesian estimation
+bayes_ivw_mr <- function(scans) {
+    tidy(stan_glm(Out.Est ~ Exp.Est + 0,
+                  family = gaussian(),
+                  prior = cauchy(),
+                  weights = 1 / Out.SE^2,
+                  data=scans))
+}
+
+bayes_egger_mr <- function(scans) {
+    tidy(stan_glm(Out.Est ~ Exp.Est,
+                  family = gaussian(),
+                  prior = cauchy(),
+                  weights = 1 / Out.SE^2,
+                  data=scans))
+}
 
 #' Inverse-variance weighting approach to estimate the causal effect of one trait on another
 #' using SNPs as instrumental variables (ie Mendelian Randomization). 
 #' @params scans A data.frame-like object containing estimates and standard errors for both the outcome and exposure.
-#'  Req: 4 columns: Out.Est, Out.SE, Exp.Est, Exp.SE
+#'      Req: 4 columns: Out.Est, Out.SE, Exp.Est, Exp.SE
+#' @params mode estimation procedure.
+#'      standard = standard IVW approach.
+#'      scaled = multiplicative errors.
+#'      random = random effects model.
 #' @returns tidy-tibble of causal effect estimate, standard errors, test statistic and p-value
-ivw_mr <- function(scans) {
-    tidy(lm(Out.Est ~ Exp.Est + 0, weights = 1 / Out.SE^2, data=scans))
+ivw_mr <- function(scans, mode = c("standard", "scaled", "random")) {
+    mode <- match.arg(mode)
+    switch(mode,
+           standard = {
+               scans %>% mutate(w = (Exp.Est / Out.SE)^2) %>%
+                   summarize(term = "Exp.Est",
+                             estimate = sum(w * (Out.Est / Exp.Est)) / sum(w), 
+                             std.error = sqrt(1 / sum(w)),
+                             statistic = estimate / std.error,
+                             p.value = 2 * pt(abs(statistic), nrow(scans) - 1, lower.tail=F))
+           },
+           scaled = tidy(lm(Out.Est ~ Exp.Est + 0, weights = 1 / Out.SE^2, data=scans)),
+           random = {
+               table <- scans %>% mutate(w = (Exp.Est / Out.SE)^2) %>%
+                   summarize(term = "Exp.Est",
+                             estimate = sum(w * (Out.Est / Exp.Est)) / sum(w), 
+                             std.error = sqrt(1 / sum(w)),
+                             statistic = estimate / std.error,
+                             p.value = 2 * pt(abs(statistic), nrow(scans) - 1, lower.tail=F),
+                             Q = sum(w * ((Out.Est / Exp.Est) - estimate)^2),
+                             df = nrow(scans) - 1,
+                             S = sum(w) - (sum(w^2) / sum(w)))
+               # compute the DerSimonian-Laird estimator for prior random variance
+               if (table$Q >= table$df) {
+                   tau <- (table$Q - table$df) / table$S
+                   scans %>% mutate(w = Exp.Est^2 / (Out.SE^2 + tau)) %>%
+                       summarize(term = "Exp.Est",
+                                 estimate = sum(w * (Out.Est / Exp.Est)) / sum(w), 
+                                 std.error = sqrt(1 / sum(w)),
+                                 statistic = estimate / std.error,
+                                 p.value = 2 * pt(abs(statistic), nrow(scans) - 1, lower.tail=F),
+                                 tau = tau)
+               } else {
+                   # prior variance term was negative so just drop it and use FE model
+                   table %>% select(term, estimate, std.error, statistic, p.value)
+               }
+           }) 
 }
 
 #' Egger-regression approach to estimate the causal effect of one trait on another
@@ -20,8 +74,21 @@ ivw_mr <- function(scans) {
 #' @params scans A data.frame-like object containing estimates and standard errors for both the outcome and exposure.
 #'  Req: 4 columns: Out.Est, Out.SE, Exp.Est, Exp.SE
 #' @returns tidy-tibble of causal effect estimate, standard errors, test statistic and p-value
-egger_mr <- function(scans) {
-    tidy(lm(Out.Est ~ Exp.Est, weights = 1 / Out.SE^2, data=scans))
+egger_mr <- function(scans, mode = c("standard", "scaled", "random")) {
+    mode <- match.arg(mode)
+    switch(mode,
+           standard = {
+               # just unscale the regression results
+               res <- lm(Out.Est ~ Exp.Est, weights = 1 / Out.SE^2, data=scans)
+               table <- tidy(res)
+               q_params <- glance(res) %>% select(deviance, df.residual)
+               table$std.error <- table$std.error * (q_params$df.residual / q_params$deviance)
+               table$statistic <- table$estimate / table$std.error
+               table$p.value <- 2 * pt(abs(table$statistic), q_params$df.residual, lower.tail=F)
+               table
+           },
+           scaled = tidy(lm(Out.Est ~ Exp.Est, weights = 1 / Out.SE^2, data=scans)),
+           random = NULL)
 }
 
 
