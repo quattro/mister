@@ -1,5 +1,5 @@
 # mister
-Straightforward simulation study of various Mendelian Randomization (MR) approaches using summary GWAS data.
+Straightforward simulation study of various Mendelian Randomization (MR) approaches using summary GWAS data. Intent is mainly for research and code should not be used in real-world MR studies.
 
 Overview
 ---------
