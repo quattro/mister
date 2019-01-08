@@ -15,8 +15,9 @@ To run a simulation load an R interactive session and enter `source(simulation.R
 
 Caveats
 -------
-1. Simulations are currently set up such that no SNPs are in linkage (i.e. LD) with one another.
-2. Outcome and exposure GWAS results are from the same population, but no shared environmental factors or modeled (in either data generation or estimation)
+1. Simulations assume that all SNPs are causal (i.e. infinitesimal model)
+2. Simulations are currently set up such that no SNPs are in linkage (i.e. LD) with one another.
+3. Outcome and exposure GWAS results are from the same population, but no shared environmental factors or modeled (in either data generation or estimation)
 
 Methods References
 ------------------
