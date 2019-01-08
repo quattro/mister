@@ -16,7 +16,7 @@ U <- rnorm(Nsamples, 0, sqrt(s2e / 2))
 
 E <- X %*% beta + U + rnorm(Nsamples, 0, sqrt(s2e / 2))
 
-# simulate outcome as a function of the exposure and balanced pleiotropic effects
+# simulate outcome as a function of the exposure and directional pleiotropic effects
 alpha <- 0.1
 h2g <- 0.10
 sign <- ifelse(rbinom(1, 1, 0.5) == 1, -1, 1)
